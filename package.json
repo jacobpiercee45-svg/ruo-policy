@@ -1,0 +1,28 @@
+{
+  "name": "ruo-policy",
+  "version": "1.0.0",
+  "description": "Research-Use-Only language policy + linter core. The single shared compliance standard imported by the ouralus storefront build gate and the ops content-engine compliance gate.",
+  "type": "module",
+  "main": "index.mjs",
+  "types": "ruo-policy.d.mts",
+  "exports": {
+    ".": {
+      "types": "./ruo-policy.d.mts",
+      "default": "./index.mjs"
+    },
+    "./policy": {
+      "types": "./ruo-policy.d.mts",
+      "default": "./ruo-policy.mjs"
+    }
+  },
+  "files": [
+    "index.mjs",
+    "ruo-policy.mjs",
+    "ruo-policy.d.mts",
+    "README.md"
+  ],
+  "scripts": {
+    "test": "node --test"
+  },
+  "license": "UNLICENSED"
+}
