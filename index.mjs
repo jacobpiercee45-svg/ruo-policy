@@ -49,15 +49,22 @@ function allowRanges(text, filePath) {
 
 const inRange = (ranges, start, end) => ranges.some(([a, b]) => start >= a && end <= b);
 
+// Abbreviations whose internal/trailing periods are NOT sentence boundaries. The bare
+// "last period is the sentence start" heuristic breaks on these: "…not approved by the
+// U.S. Food…" hid the preceding "not" (false positive), and symmetrically a period inside
+// an abbreviation can fail OPEN by making a real, un-negated term look same-sentence with
+// an earlier negator. We neutralize these periods before locating the last true stop.
+const ABBREVIATION =
+  /\b(?:U\.S\.A|U\.S|U\.K|e\.g|i\.e|etc|vs|Inc|Ltd|Corp|Co|Dr|Mrs|Mr|Ms|Ph\.?D|a\.m|p\.m|approx|Fig|et\s+al)\./gi;
+
 function negatedNearby(text, idx) {
   const from = Math.max(0, idx - NEGATION_WINDOW);
   const window = text.slice(from, idx);
-  if (window.includes(".") || window.includes("?")) {
-    // negator must be in the SAME sentence — only scan after the last boundary
-    const lastStop = Math.max(window.lastIndexOf("."), window.lastIndexOf("?"));
-    return NEGATORS.test(window.slice(lastStop + 1));
-  }
-  return NEGATORS.test(window);
+  // Mask abbreviation periods (same length in → indices stay valid), then split on the
+  // last TRUE sentence stop (. ? !). A negator must sit in that same-sentence tail.
+  const masked = window.replace(ABBREVIATION, (m) => m.replace(/\./g, ""));
+  const lastStop = Math.max(masked.lastIndexOf("."), masked.lastIndexOf("?"), masked.lastIndexOf("!"));
+  return NEGATORS.test(lastStop >= 0 ? window.slice(lastStop + 1) : window);
 }
 
 function lineOf(text, idx) {
@@ -68,17 +75,20 @@ function lineOf(text, idx) {
  * Evaluate already-extracted text against the RUO policy.
  *
  * @param {string} text  Plain text to scan (caller runs htmlToText first for HTML).
- * @param {{ filePath?: string }} [opts]  filePath drives ALLOW's file-scoping.
- *   For the storefront this is the repo-relative path; for a social draft pass a
- *   synthetic path (e.g. "draft") so ONLY the universal negated-disclaimer
- *   allowances apply, never the legal-page ones (learn/terms/privacy/compounds).
- * @returns {Array<{file:string,line:number,cls:"dosing"|"benefit"|"humanUse",term:string,ctx:string}>}
+ * @param {{ filePath?: string, surface?: "ruo"|"consumer" }} [opts]  filePath drives
+ *   ALLOW's file-scoping (synthetic path e.g. "draft" for a social caption). `surface`
+ *   selects which class tier applies and DEFAULTS to "ruo" (fail-closed): a caller that
+ *   passes no surface gets the full policy. "consumer" turns OFF the RUO-framing classes
+ *   (benefit, humanUse) but keeps every HARD-FLOOR class (diseaseCure, regulatory, dosing,
+ *   supplements).
+ * @returns {Array<{file:string,line:number,cls:"diseaseCure"|"regulatory"|"dosing"|"supplements"|"benefit"|"humanUse",term:string,ctx:string}>}
  *   One entry per un-suppressed violation. Empty array = clean.
  */
-export function lintText(text, { filePath = "" } = {}) {
+export function lintText(text, { filePath = "", surface = "ruo" } = {}) {
   const ranges = allowRanges(text, filePath);
   const hits = [];
-  for (const [cls, patterns] of Object.entries(BANNED)) {
+  for (const [cls, { surfaces, patterns }] of Object.entries(BANNED)) {
+    if (!surfaces.includes(surface)) continue; // class does not apply on this surface (fail-closed: default 'ruo')
     for (const re of patterns) {
       const g = new RegExp(re.source, re.flags.includes("g") ? re.flags : re.flags + "g");
       for (const m of text.matchAll(g)) {

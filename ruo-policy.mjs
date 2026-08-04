@@ -4,54 +4,122 @@
  * the Node build-gate linter (scripts/ruo-lint.mjs) and site TS code (e.g. a
  * runtime chat post-filter) via the sibling ruo-policy.d.mts declaration.
  *
- * Three classes of violation, matching the compliance audit's taxonomy:
- *   dosing   — anything that reads as administration/consumption guidance
- *   benefit  — therapeutic/outcome claims (the FDA/FTC misbranding surface)
- *   humanUse — language that frames the products as for people
+ * SURFACE dimension (v2). Each class declares the SURFACES it applies on:
+ *   'ruo'      — storefront, /compounds/, all 7 social accounts. The DEFAULT
+ *                (fail-closed): anything that does not pass an explicit surface
+ *                is judged as 'ruo'. This is the full, unchanged v1 policy.
+ *   'consumer' — blog only. Human-directed framing is PERMITTED (benefit +
+ *                human-use), so those classes are OFF here — but the HARD FLOOR
+ *                below still applies.
+ *
+ * Classes, by tier:
+ *   HARD FLOOR (both surfaces, never relaxes):
+ *     diseaseCure — disease-treatment / cure claims (carved out of v1 'benefit'
+ *                   so relaxing benefit on 'consumer' can never relax cure/treat-
+ *                   a-disease)
+ *     regulatory  — references to the FDA, the 503A/BPC-157 review, or
+ *                   compounding status (NEW in v2; applies to both surfaces)
+ *     dosing      — administration/consumption guidance
+ *     supplements — the DSHEA-regulated category term (carved out of v1
+ *                   'humanUse'; a category claim, not mere human framing)
+ *   RUO FRAMING ('ruo' only, relaxed on 'consumer'):
+ *     benefit     — therapeutic/outcome claims (minus cure → diseaseCure)
+ *     humanUse    — frames the products as for people (minus supplements)
+ *
+ * v1 behaviour is preserved on 'ruo': the union of every class on surface 'ruo'
+ * reproduces the v1 verdict, EXCEPT for the intentional new hard-floor coverage
+ * (regulatory; prevent/reverse-a-disease) — surfaced by the behavior-diff.
  *
  * The zod content schemas are the PRIMARY guard (claim fields don't exist);
  * these patterns are the backstop that scans the RENDERED site, so hand-written
  * .astro copy and generated text answer to the same policy.
  */
 
+/** The surfaces a rule can apply on. 'ruo' is the fail-closed default. */
+export const SURFACES = ["ruo", "consumer"];
+
+/** Disease / condition objects — a treat/prevent/reverse near one of these is a
+ *  disease-treatment claim (hard floor), distinct from a cosmetic "treats dullness". */
+const DISEASE =
+  "(?:disease|diseases|cancer|tumou?rs?|diabetes|arthritis|injur(?:y|ies)|wounds?|" +
+  "inflammation|chronic\\s+pain|illness(?:es)?|disorders?|syndrome|infections?|" +
+  "depression|anxiety|osteoporosis|neuropathy|fibrosis|ulcers?|hypertension|obesity)";
+
 export const BANNED = {
-  dosing: [
-    /\b(dos(e|es|ed|age|ages|ing)|mg\s*\/\s*kg|mcg\s*\/\s*kg)\b/i,
-    /\binject(s|ed|ing|ion|ions|able)?\b/i,
-    /\badminist(er|ered|ering|ration)\b/i,
-    /\btitrat(e|ed|ion|ing)\b/i,
-    /\b(subcutaneous|intramuscular|intravenous)\b/i,
-    /\btake\s+\w{0,20}\s*(daily|weekly|twice|nightly|before bed)\b/i,
-    /\bcycle\s+(length|protocol)\b/i,
-    /\bprotocols?\s+for\s+(use|using)\b/i,
-  ],
-  benefit: [
-    /\b(cure|cures|cured|curing)\b/i,
-    /\bheal(s|ed|ing)?\b/i,
-    /\btherap(y|ies|eutic|eutics|eutically)\b/i,
-    /\btreat(s|ed|ing|ment|ments)?\b/i,
-    /\banti[-\s]?ag(e|ing)\b/i,
-    /\b(fat|weight)[-\s]?loss\b/i,
-    /\bmuscle\s+(growth|gain|building|mass)\b/i,
-    /\b(boost|boosts|boosted|boosting)\b/i,
-    /\bimprov(e|es|ed|ing|ement)\b/i,
-    /\benhanc(e|es|ed|ing|ement)\b/i,
-    /\b(reduc|lower)(e|es|ed|ing)?\s+(fat|weight|wrinkles|inflammation|pain)\b/i,
-    /\b(longevity|life\s*extension|performance)\s+(benefit|effect)s?\b/i,
-    /\bbenefits?\s+(of|for|include)\b/i,
-    /\brecovery\s+(aid|support|benefit)s?\b/i,
-    /\bwell-?being\b/i,
-    /\brejuvenat(e|es|ed|ing|ion)\b/i,
-  ],
-  humanUse: [
-    /\bpatients?\b/i,
-    /\bclinical\s+use\b/i,
-    /\bhuman\s+(use|application|supplementation)\b/i,
-    /\bin\s+humans?\b/i,
-    /\bfor\s+(people|men|women|athletes|bodybuilders)\b/i,
-    /\bsupplements?\b/i,
-    /\bself-?administ/i,
-  ],
+  // ── HARD FLOOR — applies on EVERY surface, never relaxes ──
+  diseaseCure: {
+    surfaces: ["ruo", "consumer"],
+    patterns: [
+      /\b(cure|cures|cured|curing)\b/i, // a cure claim is always hard floor
+      // a treatment verb within a short same-sentence window of a disease object
+      new RegExp(
+        "\\b(?:treat(?:s|ed|ing|ment|ments)?|prevent(?:s|ed|ing|ion)?|revers(?:e|es|ed|ing)|" +
+          "manag(?:e|es|ed|ing|ement)|remed(?:y|ies)|heal(?:s|ed|ing)?)\\b[^.!?\\n]{0,30}\\b" + DISEASE + "\\b",
+        "i",
+      ),
+      new RegExp("\\b" + DISEASE + "\\b[^.!?\\n]{0,30}\\b(?:treatment|cure|therapy|remedy)\\b", "i"),
+    ],
+  },
+  regulatory: {
+    surfaces: ["ruo", "consumer"],
+    patterns: [
+      /\bFDA\b/, // the agency (acronym; case-sensitive — always uppercase)
+      /\bfood\s+and\s+drug\s+administration\b/i,
+      /\b503\s?[AB]\b/, // 503A / 503B compounding pathways — where the BPC-157 review sits
+      /\bcompound(?:ed|ing)\b/i, // compounding STATUS — not "compound(s)", the product noun
+      /\b(?:approved|cleared|evaluated|reviewed)\s+by\s+the\s+(?:fda|food\s+and\s+drug\s+administration)\b/i,
+      /\bBPC[-\s]?157\b[^.!?\n]{0,40}\b(?:503\s?a|compound(?:ed|ing)|fda|review(?:s|ed|ing)?)\b/i,
+    ],
+  },
+  dosing: {
+    surfaces: ["ruo", "consumer"], // administration guidance stays banned on consumer (approved)
+    patterns: [
+      /\b(dos(e|es|ed|age|ages|ing)|mg\s*\/\s*kg|mcg\s*\/\s*kg)\b/i,
+      /\binject(s|ed|ing|ion|ions|able)?\b/i,
+      /\badminist(er|ered|ering|ration)\b/i,
+      /\btitrat(e|ed|ion|ing)\b/i,
+      /\b(subcutaneous|intramuscular|intravenous)\b/i,
+      /\btake\s+\w{0,20}\s*(daily|weekly|twice|nightly|before bed)\b/i,
+      /\bcycle\s+(length|protocol)\b/i,
+      /\bprotocols?\s+for\s+(use|using)\b/i,
+    ],
+  },
+  supplements: {
+    surfaces: ["ruo", "consumer"], // DSHEA category term — hard floor even on consumer (approved)
+    patterns: [/\bsupplements?\b/i],
+  },
+  // ── RUO FRAMING — 'ruo' only; PERMITTED on 'consumer' ──
+  benefit: {
+    surfaces: ["ruo"],
+    patterns: [
+      /\bheal(s|ed|ing)?\b/i,
+      /\btherap(y|ies|eutic|eutics|eutically)\b/i,
+      /\btreat(s|ed|ing|ment|ments)?\b/i,
+      /\banti[-\s]?ag(e|ing)\b/i,
+      /\b(fat|weight)[-\s]?loss\b/i,
+      /\bmuscle\s+(growth|gain|building|mass)\b/i,
+      /\b(boost|boosts|boosted|boosting)\b/i,
+      /\bimprov(e|es|ed|ing|ement)\b/i,
+      /\benhanc(e|es|ed|ing|ement)\b/i,
+      /\b(reduc|lower)(e|es|ed|ing)?\s+(fat|weight|wrinkles|inflammation|pain)\b/i,
+      /\b(longevity|life\s*extension|performance)\s+(benefit|effect)s?\b/i,
+      /\bbenefits?\s+(of|for|include)\b/i,
+      /\brecovery\s+(aid|support|benefit)s?\b/i,
+      /\bwell-?being\b/i,
+      /\brejuvenat(e|es|ed|ing|ion)\b/i,
+    ],
+  },
+  humanUse: {
+    surfaces: ["ruo"],
+    patterns: [
+      /\bpatients?\b/i,
+      /\bclinical\s+use\b/i,
+      /\bhuman\s+(use|application|supplementation)\b/i,
+      /\bin\s+humans?\b/i,
+      /\bfor\s+(people|men|women|athletes|bodybuilders)\b/i,
+      /\bself-?administ/i,
+    ],
+  },
 };
 
 /**
@@ -75,6 +143,12 @@ export const ALLOW = [
   { file: /./, phrase: /food\s+and\s+drug\s+administration/gi },
   // [^.] would stop at the periods in "U.S." — bound by length + explicit tail instead:
   { file: /./, phrase: /not\s+approved\s+by.{0,140}?human\s+use/gi },
+  // Defense in depth for the `regulatory` class: the RUO non-approval disclaimer
+  // legitimately NAMES the FDA to disclaim it. Permit the acronym ONLY inside the negated
+  // "not {approved/evaluated/reviewed/cleared/endorsed} by … (FDA)" frame (cross-line
+  // tolerant, covers the parenthetical acronym). Affirmative references ("FDA-cleared",
+  // "the FDA is reviewing") sit OUTSIDE this frame and still fire.
+  { file: /./, phrase: /\bnot\s+(?:approved|evaluated|reviewed|cleared|endorsed)\s+by[\s\S]{0,100}?\(?\bFDA\b\)?/gi },
   // Terms misuse clause assigns responsibility for prohibited use — names it to prohibit it:
   { file: /terms/, phrase: /misuse[^.]{0,140}/gi },
   // Privacy policy's operational "improve the site/experience" language:
@@ -99,4 +173,4 @@ export const NEGATION_WINDOW = 60; // chars before the match to scan for a negat
  * its bundled value against the canonical latest and disables auto-publish when
  * behind (fail-closed floor). Keep in sync with package.json "version".
  */
-export const POLICY_VERSION = "1.0.0";
+export const POLICY_VERSION = "2.0.0";
