@@ -117,6 +117,33 @@ test("the RUO non-approval disclaimer NAMING the FDA is allowlisted (not a regul
   assert.ok(!hits.some((h) => h.cls === "regulatory"), "FDA in the non-approval disclaimer must not fire");
 });
 
+// ── consumer-only supplement negation allowance (v2.1) ─────────────
+const suppCount = (t, surface) => lintText(t, { filePath: "draft", surface }).filter((h) => h.cls === "supplements").length;
+
+test("consumer: 'Is X a dietary supplement? No … research compound' is allowed", () => {
+  const t = "Is GHK-Cu considered a dietary supplement?\nNo. GHK-Cu is a research compound and is not classified as a dietary supplement, vitamin, or nutraceutical.";
+  assert.equal(suppCount(t, "consumer"), 0, "definitional-negated supplement question must pass on consumer");
+});
+
+test("consumer: affirmative / presuppositional supplement uses STILL fire", () => {
+  assert.ok(suppCount("Take this supplement daily for the best results.", "consumer") >= 1);
+  assert.ok(suppCount("Our premium peptide supplement is third-party tested.", "consumer") >= 1);
+  // A question NOT rebutted by category ("No" about safety, not about being a supplement):
+  assert.ok(suppCount("Is this supplement safe? No, always consult a provider first.", "consumer") >= 1);
+});
+
+test("RUO surface is UNCHANGED by the consumer allowance (fails identically)", () => {
+  const t = "Is GHK-Cu considered a dietary supplement?\nNo. GHK-Cu is a research compound and is not classified as a dietary supplement.";
+  assert.ok(suppCount(t, "ruo") >= 1, "the same text still fires supplements on ruo");
+  // and the surface-less default (fail-closed ⇒ ruo) also still fires
+  assert.ok(lintText(t, { filePath: "draft" }).some((h) => h.cls === "supplements"));
+});
+
+test("the existing negated supplement disclaimer still passes on ruo (allowance is additive)", () => {
+  const hits = lintText("Not drugs, foods, supplements, or medical devices.", { filePath: "draft", surface: "ruo" });
+  assert.ok(!hits.some((h) => h.cls === "supplements"));
+});
+
 test("htmlToText strips markup but keeps visible text", () => {
   const txt = htmlToText("<p>hello <b>world</b></p><script>var x = 'cure'</script>");
   assert.ok(txt.includes("hello") && txt.includes("world"));

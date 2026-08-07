@@ -159,6 +159,19 @@ export const ALLOW = [
   // from controlled records with human sign-off (see plan risk note).
   // JSON source (compound records):
   { file: /compounds/, phrase: /"(?:title|journal)":\s*"[^"]*"/gi },
+  // CONSUMER surface ONLY (v2.1): answering the top consumer question "Is X a dietary
+  // supplement?" in the negative is DEFINING AGAINST the DSHEA category, not claiming it —
+  // and that's good positioning. Suppress `supplement` ONLY inside an interrogative that is
+  // answered "no/not …" AND rebutted by category (research compound / not a … / dietary
+  // supplement / nutraceutical / drug / food). Affirmative or presuppositional uses ("take
+  // this supplement", "is this supplement safe? No, consult…") lack the rebuttal frame and
+  // still FIRE. `surface: "consumer"` ⇒ RUO surface is completely unaffected.
+  {
+    surface: "consumer",
+    file: /./,
+    phrase:
+      /\b(?:is|are)\s+[^.?!]{0,60}?\bsupplements?\b[^?]{0,10}\?\s+(?:no\b|not\b)[\s\S]{0,140}?\b(?:research\s+(?:compound|chemical|peptide)|not\s+(?:a|an|classified|intended)|dietary\s+supplement|nutraceutical|drug|food)\b/gi,
+  },
 ];
 
 /**
@@ -173,4 +186,4 @@ export const NEGATION_WINDOW = 60; // chars before the match to scan for a negat
  * its bundled value against the canonical latest and disables auto-publish when
  * behind (fail-closed floor). Keep in sync with package.json "version".
  */
-export const POLICY_VERSION = "2.0.0";
+export const POLICY_VERSION = "2.1.0";

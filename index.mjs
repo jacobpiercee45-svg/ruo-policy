@@ -36,10 +36,13 @@ export function htmlToText(html) {
     .replace(/&nbsp;|&amp;|&quot;|&#39;|&lt;|&gt;/g, " ");
 }
 
-/** Ranges of allowlisted phrase matches for this file. */
-function allowRanges(text, filePath) {
+/** Ranges of allowlisted phrase matches for this file + surface. An ALLOW entry with a
+ *  `surface` applies ONLY on that surface; an entry without one applies on every surface
+ *  (unchanged v1/v2.0 behavior). Mirrors how BANNED classes declare their `surfaces`. */
+function allowRanges(text, filePath, surface) {
   const ranges = [];
-  for (const { file, phrase } of ALLOW) {
+  for (const { file, phrase, surface: only } of ALLOW) {
+    if (only && only !== surface) continue; // surface-scoped allowance (unset ⇒ all surfaces)
     if (!file.test(filePath)) continue;
     const re = new RegExp(phrase.source, phrase.flags.includes("g") ? phrase.flags : phrase.flags + "g");
     for (const m of text.matchAll(re)) ranges.push([m.index, m.index + m[0].length]);
@@ -85,7 +88,7 @@ function lineOf(text, idx) {
  *   One entry per un-suppressed violation. Empty array = clean.
  */
 export function lintText(text, { filePath = "", surface = "ruo" } = {}) {
-  const ranges = allowRanges(text, filePath);
+  const ranges = allowRanges(text, filePath, surface);
   const hits = [];
   for (const [cls, { surfaces, patterns }] of Object.entries(BANNED)) {
     if (!surfaces.includes(surface)) continue; // class does not apply on this surface (fail-closed: default 'ruo')

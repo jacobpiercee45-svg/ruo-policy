@@ -17,7 +17,7 @@ export type RuoClass =
 /** Each class declares the surfaces it applies on plus its banned-term patterns. */
 export declare const BANNED: Record<RuoClass, { surfaces: Surface[]; patterns: RegExp[] }>;
 export declare const SURFACES: Surface[];
-export declare const ALLOW: { file: RegExp; phrase: RegExp }[];
+export declare const ALLOW: { file: RegExp; phrase: RegExp; surface?: Surface }[];
 export declare const NEGATORS: RegExp;
 export declare const NEGATION_WINDOW: number;
 export declare const POLICY_VERSION: string;
