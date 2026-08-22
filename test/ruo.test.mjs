@@ -149,3 +149,83 @@ test("htmlToText strips markup but keeps visible text", () => {
   assert.ok(txt.includes("hello") && txt.includes("world"));
   assert.ok(!txt.includes("var x"));
 });
+
+// ── dosing: amount + frequency constructions (v2.3) ────────────────
+for (
+  const text of [
+    "250 mcg twice daily",
+    "Take 250 mcg twice daily for eight weeks.",
+    "0.5 mg per day",
+    "2 mg every 3 days",
+    "10 iu weekly",
+    "Draw 1 ml daily.",
+  ]
+) {
+  test(`amount+frequency fires as dosing: ${JSON.stringify(text)}`, () => {
+    assert.ok(lintText(text, { filePath: "draft" }).some((h) => h.cls === "dosing"));
+  });
+}
+
+test("amount+frequency does NOT cross a sentence boundary", () => {
+  // A spec figure and an unrelated schedule word in the NEXT sentence are not
+  // an instruction. This is the regression the ~6-token gap alone did not stop.
+  const hits = lintText("Supplied as a 5 mg vial. Shipping is weekly.", { filePath: "draft" });
+  assert.deepEqual(hits.filter((h) => h.cls === "dosing"), []);
+});
+
+test("a bare catalogue spec figure stays clean", () => {
+  for (const t of ["Each vial contains 10 mg of peptide.", "Semax 5 mg vial, lyophilised powder."]) {
+    assert.deepEqual(lintText(t, { filePath: "draft" }).filter((h) => h.cls === "dosing"), []);
+  }
+});
+
+test("the preparation-for-use verb fires as dosing", () => {
+  const hits = lintText("Reconstitute with 2 mL bacteriostatic water.", { filePath: "draft" });
+  const terms = hits.filter((h) => h.cls === "dosing").map((h) => h.term.toLowerCase());
+  assert.ok(terms.some((t) => t === "reconstitute"));
+});
+
+test("'bacteriostatic water' is NOT banned — it is a sold SKU, not guidance", () => {
+  // Flat-token banning produced 42 storefront false positives across the
+  // catalogue, checkout, llms.txt and the reconstitution calculator.
+  for (const t of [
+    "Bacteriostatic Water \u2014 2 ml",
+    "Add to cart: Bacteriostatic Water",
+    "Peptides are commonly dissolved in bacteriostatic water.",
+  ]) {
+    assert.deepEqual(lintText(t, { filePath: "draft" }).filter((h) => h.cls === "dosing"), []);
+  }
+});
+
+test("the reconstitution NOUN is not guidance and stays clean", () => {
+  // /tools/reconstitution-calculator/ and /learn/reconstitution-for-research/
+  // are page names, not instructions — the verb form is what we ban.
+  for (const t of ["Reconstitution calculator", "Our reconstitution guide for researchers"]) {
+    assert.deepEqual(lintText(t, { filePath: "draft" }).filter((h) => h.cls === "dosing"), []);
+  }
+});
+
+test("dosing amount+frequency is hard floor (fires on consumer too)", () => {
+  assert.ok(lintText("250 mcg twice daily", { filePath: "draft", surface: "consumer" }).some((h) => h.cls === "dosing"));
+});
+
+// ── humanUse: telemedicine synonyms (v2.3) ─────────────────────────
+for (const text of ["telehealth", "tele-health", "virtual provider", "online clinic", "prescriber", "prescribers"]) {
+  test(`telemedicine synonym fires as humanUse: ${JSON.stringify(text)}`, () => {
+    assert.ok(lintText(text, { filePath: "draft" }).some((h) => h.cls === "humanUse"));
+  });
+}
+
+test("telemedicine synonyms are RUO-framing (OFF on consumer, like telemedicine itself)", () => {
+  for (const t of ["telehealth", "virtual provider", "online clinic", "prescriber"]) {
+    assert.deepEqual(lintText(t, { filePath: "draft", surface: "consumer" }).filter((h) => h.cls === "humanUse"), []);
+  }
+});
+
+test("negation still suppresses the new humanUse synonyms", () => {
+  assert.deepEqual(
+    lintText("We do not operate a telehealth service or employ a prescriber.", { filePath: "draft" })
+      .filter((h) => h.cls === "humanUse"),
+    [],
+  );
+});

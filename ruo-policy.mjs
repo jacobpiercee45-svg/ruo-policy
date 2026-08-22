@@ -82,6 +82,30 @@ export const BANNED = {
       /\btake\s+\w{0,20}\s*(daily|weekly|twice|nightly|before bed)\b/i,
       /\bcycle\s+(length|protocol)\b/i,
       /\bprotocols?\s+for\s+(use|using)\b/i,
+      // Amount + frequency, as one instruction (v2.3 — Defect 5). The literal
+      // tokens "dose"/"dosage" are absent from "250 mcg twice daily", so every
+      // policy through v2.2 read that as clean. The amount and the frequency
+      // must sit within ~6 intervening tokens of each other: a bare spec figure
+      // ("5 mg vial") and a schedule word elsewhere in the same paragraph are
+      // NOT an instruction, and joining them at any distance would fire on the
+      // catalogue. `ml` is included because reconstitution volumes carry it.
+      // The gap excludes . ! ? and newline so the two halves must be in ONE
+      // sentence — otherwise "5 mg vial. Shipping is weekly" reads as a dose.
+      new RegExp(
+        "\\b\\d+(?:\\.\\d+)?\\s*(?:mcg|mg|iu|ml)\\b(?:[^.!?\\n\\w]+\\w+){0,6}?[^.!?\\n\\w]+" +
+          "(?:daily|twice|weekly|per\\s+day|every\\s+\\d+)\\b",
+        "i",
+      ),
+      // Preparation-for-use instruction. Deliberately the VERB form only:
+      // "reconstitution" (the noun) names the calculator and the learn page and
+      // is not itself guidance — it appears 28x across the compound records.
+      // NOTE: "bacteriostatic water" is deliberately NOT banned. It is a sold
+      // SKU (bacteriostatic-water-2ml/-10ml/-10pack-2ml, category "Lab
+      // accessory"); as a flat token it produced 42 storefront false positives,
+      // and no instructional frame separates the product from the instruction
+      // ("Add to cart", "Bacteriostatic Water — 2 ml"). The guidance it was
+      // meant to catch is already covered by `reconstitute` + amount/frequency.
+      /\breconstitute\b/i,
     ],
   },
   supplements: {
@@ -126,6 +150,12 @@ export const BANNED = {
       /\bunsupervised\s+use\b/i,
       /\bregimens?\b/i,
       /\b(individual|personal)(ized)?\s+health\s+(profile|history)\b/i,
+      // Telemedicine synonyms (v2.3 — Defect 6). v2.2 shipped `telemedicine`
+      // alone, so the same pathway described in any other words passed clean.
+      /\btele-?health\b/i,
+      /\bvirtual\s+provider\b/i,
+      /\bonline\s+clinic\b/i,
+      /\bprescribers?\b/i,
     ],
   },
 };
@@ -194,4 +224,4 @@ export const NEGATION_WINDOW = 60; // chars before the match to scan for a negat
  * its bundled value against the canonical latest and disables auto-publish when
  * behind (fail-closed floor). Keep in sync with package.json "version".
  */
-export const POLICY_VERSION = "2.2.0";
+export const POLICY_VERSION = "2.3.0";
