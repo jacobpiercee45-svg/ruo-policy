@@ -107,6 +107,7 @@ export const BANNED = {
       /\brecovery\s+(aid|support|benefit)s?\b/i,
       /\bwell-?being\b/i,
       /\brejuvenat(e|es|ed|ing|ion)\b/i,
+      /\bentertainment\s+purposes\b/i, // RUO storefront is not "entertainment" (v2.2 — Defect 3)
     ],
   },
   humanUse: {
@@ -118,6 +119,13 @@ export const BANNED = {
       /\bin\s+humans?\b/i,
       /\bfor\s+(people|men|women|athletes|bodybuilders)\b/i,
       /\bself-?administ/i,
+      // Clinical-oversight framing — implies a medical/telemedicine pathway (v2.2 — Defect 3, semax).
+      /\btelemedicine\b/i,
+      /\b(licensed|qualified)\s+(provider|clinician|physician|practitioner|healthcare\s+professional)\b/i,
+      /\bmedical\s+(oversight|supervision)\b/i,
+      /\bunsupervised\s+use\b/i,
+      /\bregimens?\b/i,
+      /\b(individual|personal)(ized)?\s+health\s+(profile|history)\b/i,
     ],
   },
 };
@@ -186,4 +194,4 @@ export const NEGATION_WINDOW = 60; // chars before the match to scan for a negat
  * its bundled value against the canonical latest and disables auto-publish when
  * behind (fail-closed floor). Keep in sync with package.json "version".
  */
-export const POLICY_VERSION = "2.1.0";
+export const POLICY_VERSION = "2.2.0";
