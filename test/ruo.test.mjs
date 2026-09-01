@@ -12,7 +12,7 @@ import {
 } from "../index.mjs";
 
 test("policy data shape is intact (surface-tiered)", () => {
-  assert.deepEqual(Object.keys(BANNED), ["diseaseCure", "regulatory", "dosing", "supplements", "benefit", "humanUse"]);
+  assert.deepEqual(Object.keys(BANNED), ["diseaseCure", "regulatory", "dosing", "supplements", "efficacy", "benefit", "humanUse"]);
   for (const { surfaces, patterns } of Object.values(BANNED)) {
     assert.ok(Array.isArray(surfaces) && surfaces.length > 0 && surfaces.every((s) => s === "ruo" || s === "consumer"));
     assert.ok(Array.isArray(patterns) && patterns.every((r) => r instanceof RegExp));
@@ -228,4 +228,69 @@ test("negation still suppresses the new humanUse synonyms", () => {
       .filter((h) => h.cls === "humanUse"),
     [],
   );
+});
+
+/* ---------------------------------------------------------------------------
+ * efficacy (v2.4) — upstreamed from the ouralus storefront's local layer.
+ *
+ * The corpus below IS the acceptance criterion the local rules were tuned
+ * against on 2026-08-31 and never committed anywhere. It is committed here now,
+ * because the whole failure mode of this class is a rule that over-fires on
+ * mechanism prose and gets loosened by whoever hits it next.
+ * ------------------------------------------------------------------------- */
+
+// Neutral-vocabulary efficacy claims. Every one of these passed v2.3 CLEAN.
+const EFFICACY_BAD = [
+  "Research shows it increases mitochondrial density.",
+  "Studies demonstrate a decrease in senescent cell burden.",
+  "Shown to restore telomere length in treated cultures.",
+  "Collagen synthesis is increased after exposure.",
+  "Clinically proven for skin firmness.",
+  "See the before and after gallery.",
+  "The results you can expect from a full cycle.",
+];
+
+// Legitimate mechanism prose that MUST stay clean. The first draft of the
+// evidential rule fired on the MOTS-c line in a live post; it is the regression.
+const EFFICACY_GOOD = [
+  "Research indicates that MOTS-c translocates to the nucleus.",
+  "Binding increases with pH across the tested range.",
+  "The peptide associates with cardiolipin at the inner mitochondrial membrane.",
+];
+
+for (const line of EFFICACY_BAD) {
+  test(`efficacy: flags ${JSON.stringify(line)}`, () => {
+    const hits = lintText(line, { filePath: "draft" });
+    assert.ok(hits.some((h) => h.cls === "efficacy"), "expected an efficacy hit");
+  });
+}
+
+for (const line of EFFICACY_GOOD) {
+  test(`efficacy: leaves mechanism prose clean — ${JSON.stringify(line)}`, () => {
+    const hits = lintText(line, { filePath: "draft" });
+    assert.deepEqual(hits, [], `expected clean, got ${hits.map((h) => `${h.cls}:${h.term}`).join(", ")}`);
+  });
+}
+
+test("efficacy is a HARD FLOOR — it applies on the consumer surface too", () => {
+  // The reason for upstreaming: the ops content engine judges blog drafts as
+  // 'consumer'. Scoping this class to 'ruo' would leave the engine without it.
+  for (const line of EFFICACY_BAD) {
+    const hits = lintText(line, { filePath: "draft", surface: "consumer" });
+    assert.ok(hits.some((h) => h.cls === "efficacy"), `consumer surface missed: ${line}`);
+  }
+});
+
+test("efficacy: a directional verb alone is ordinary English and never fires", () => {
+  // Both halves are always required. This is what keeps mechanism prose usable.
+  for (const line of ["Solubility increases in warm buffer.", "The signal decreased over time."]) {
+    assert.deepEqual(lintText(line, { filePath: "draft" }), []);
+  }
+});
+
+test("efficacy: a negated claim is suppressed like every other class", () => {
+  // Inherited from lintText's negation window — the local line-scanner had no
+  // such suppression, so this is behaviour GAINED by upstreaming.
+  const hits = lintText("The compound does not increase collagen density.", { filePath: "draft" });
+  assert.ok(!hits.some((h) => h.cls === "efficacy"));
 });

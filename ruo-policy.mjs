@@ -22,6 +22,11 @@
  *     dosing      — administration/consumption guidance
  *     supplements — the DSHEA-regulated category term (carved out of v1
  *                   'humanUse'; a category claim, not mere human framing)
+ *     efficacy    — a claimed RESULT in neutral vocabulary (NEW in v2.4): a
+ *                   directional verb aimed at a biological object, or an
+ *                   evidential frame pointed at one. Hard floor because a blog
+ *                   asserting a proven outcome reads to an acquirer exactly as
+ *                   the storefront doing it.
  *   RUO FRAMING ('ruo' only, relaxed on 'consumer'):
  *     benefit     — therapeutic/outcome claims (minus cure → diseaseCure)
  *     humanUse    — frames the products as for people (minus supplements)
@@ -44,6 +49,23 @@ const DISEASE =
   "(?:disease|diseases|cancer|tumou?rs?|diabetes|arthritis|injur(?:y|ies)|wounds?|" +
   "inflammation|chronic\\s+pain|illness(?:es)?|disorders?|syndrome|infections?|" +
   "depression|anxiety|osteoporosis|neuropathy|fibrosis|ulcers?|hypertension|obesity)";
+
+/** Biological objects that turn a directional verb into an outcome claim (v2.4).
+ *  Distinct from DISEASE above: these are not conditions being treated, they are
+ *  measurable things in a body that a claim asserts moved. */
+const BIO_OBJECT =
+  "(?:mitochondrial|telomere|telomerase|senescen\\w*|collagen|elastin|melanin|" +
+  "growth\\s+hormone|igf-?1|glucose|insulin|appetite|adipos\\w*|lean\\s+mass|" +
+  "muscle|bone\\s+density|skin|hair|wound|scar|angiogenes\\w*|neurogenes\\w*|" +
+  "bdnf|cognition|memory|sleep|libido|energy|endurance|recovery|longevity|lifespan|" +
+  "inflammat\\w*|oxidative|free\\s+radical|cell\\s+(?:death|survival|turnover))";
+
+/** Verbs of directional change. Ordinary English on their own — see the
+ *  `efficacy` class for why they are never matched alone. */
+const DIRECTIONAL =
+  "(?:increas(?:e|es|ed|ing)|decreas(?:e|es|ed|ing)|rais(?:e|es|ed)|lower(?:s|ed|ing)?|" +
+  "restor(?:e|es|ed|ing)|stimulat(?:e|es|ed|ing)|accelerat(?:e|es|ed|ing)|reveres?|" +
+  "promot(?:e|es|ed|ing)|optimis(?:e|es|ed)|optimiz(?:e|es|ed)|regenerat(?:e|es|ed|ing))";
 
 export const BANNED = {
   // ── HARD FLOOR — applies on EVERY surface, never relaxes ──
@@ -111,6 +133,62 @@ export const BANNED = {
   supplements: {
     surfaces: ["ruo", "consumer"], // DSHEA category term — hard floor even on consumer (approved)
     patterns: [/\bsupplements?\b/i],
+  },
+  // Efficacy claims made in NEUTRAL vocabulary (v2.4 — upstreamed from the
+  // storefront's local layer, where it ran as six ad-hoc rules from 2026-08-31).
+  //
+  // `benefit` catches the benefit VOCABULARY well: improve, enhance, boost,
+  // heal, therapeutic, and reduce/lower against a fixed object list. What it
+  // never caught is the same claim with a neutral verb and an arbitrary object:
+  //
+  //     "research shows it increases mitochondrial density"
+  //     "studies demonstrate a decrease in senescent cell burden"
+  //     "shown to restore telomere length"
+  //
+  // Every one of those passed v2.3 clean. None contains a banned word. All three
+  // are efficacy claims, which is the specific thing that makes a peptide
+  // merchant account unbankable — an acquirer reading the page sees a product
+  // being sold for an outcome.
+  //
+  // HARD FLOOR, on both surfaces, and that is the point of upstreaming it. The
+  // consumer relaxation exists so a blog may address a person and name a
+  // benefit; it was never meant to permit asserting a PROVEN RESULT. A blog post
+  // lives on the selling origin and an acquirer reads it as the storefront's own
+  // voice, so "research proves it increases collagen" is closer to `diseaseCure`
+  // than to "benefits of". Scoping this to `ruo` would leave the ops content
+  // engine — whose drafts are judged as `consumer` — without the check.
+  //
+  // Fires on the FRAME, not the vocabulary. Both halves are always required.
+  efficacy: {
+    surfaces: ["ruo", "consumer"],
+    patterns: [
+      // THE PRECISE ONE, and the rule that carries this class: a directional
+      // verb aimed at a biological object, in a single sentence. "increases
+      // collagen", "restores telomere length", "promotes wound closure".
+      // DIRECTIONAL alone is ordinary English and appears in real mechanism
+      // prose ("binding increases with pH"), so the object is what makes it a
+      // claim about a result in a body.
+      new RegExp("\\b" + DIRECTIONAL + "\\b[^.!?\\n]{0,30}\\b" + BIO_OBJECT + "\\b", "i"),
+      // The same claim with the object first: "collagen synthesis is increased".
+      new RegExp("\\b" + BIO_OBJECT + "\\b[^.!?\\n]{0,30}\\b(?:is|are|was|were)\\s+" + DIRECTIONAL + "\\b", "i"),
+      // An evidential frame is NOT flagged on its own, and that is deliberate.
+      // Describing what published literature examines is the entire content
+      // strategy — "research indicates that MOTS-c translocates to the nucleus"
+      // is mechanism, is correct, and must stay. The first draft of this rule
+      // fired on exactly that sentence in the live MOTS-c post. What is flagged
+      // is an evidential frame POINTED AT AN OUTCOME: the frame and a
+      // directional verb in the same sentence.
+      new RegExp(
+        "\\b(?:research|studies|study|trials?|data|evidence)\\b[^.!?\\n]{0,40}" +
+          "\\b(?:show(?:s|n|ed)?|demonstrat(?:e|es|ed)|prov(?:e|es|en)|confirm(?:s|ed)?)\\b" +
+          "[^.!?\\n]{0,40}\\b" + DIRECTIONAL + "\\b",
+        "i",
+      ),
+      // Pure marketing frames. No mechanism prose says "clinically proven".
+      /\b(?:clinically|scientifically)\s+(?:proven|validated)\b/i,
+      /\bbefore\s*(?:\/|and|&|-)\s*after\b/i,
+      /\b(?:results?|outcomes?)\s+(?:you\s+can\s+)?(?:expect|see|achieve)\b/i,
+    ],
   },
   // ── RUO FRAMING — 'ruo' only; PERMITTED on 'consumer' ──
   benefit: {
@@ -224,4 +302,4 @@ export const NEGATION_WINDOW = 60; // chars before the match to scan for a negat
  * its bundled value against the canonical latest and disables auto-publish when
  * behind (fail-closed floor). Keep in sync with package.json "version".
  */
-export const POLICY_VERSION = "2.3.0";
+export const POLICY_VERSION = "2.4.0";
